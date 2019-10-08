@@ -45,6 +45,8 @@ public class Main : MonoBehaviour
 
     public int sp;
 
+    public bool loadRomAtStart;
+
     public bool waitForInput;
     public int waitForInputRegisterIndex;
 
@@ -53,18 +55,18 @@ public class Main : MonoBehaviour
 
     public int cycleSpeed = 500; //default speed is 500hz
 
-    public bool isRunning;
+    public bool isRunning = false;
 
     string romPath;
 
     public bool enableSound;
 
+    public TMP_Text soundEnabledText;
+
 public byte[] romBytes;
 
 public TMP_InputField romInputField;
-    public void SetRomNameToInputtedName(string name){
-        romName = name;
-    }
+
     // Start is called before the first frame update
     void Start()
     {
@@ -74,8 +76,11 @@ public TMP_InputField romInputField;
         screenTex.filterMode = FilterMode.Point;
         ClearScreen();
         screenImage.texture = screenTex;
-        //LoadNewRom(romName);
-      // Init();
+        if (loadRomAtStart)
+        {
+            LoadNewRom(romName);
+            Init();
+        }
     }
     public void LoadRomButton(){
         LoadNewRom(romInputField.text);
@@ -90,7 +95,7 @@ public TMP_InputField romInputField;
         romPath = Application.streamingAssetsPath + "/Chip-8 Roms/" + name;
         romBytes = File.ReadAllBytes(romPath);
         }
- catch(FileNotFoundException){
+ catch(Exception){
 throw new UnityException("The given ROM path doesn't exist");
  }
     }
@@ -129,10 +134,15 @@ throw new UnityException("The given ROM path doesn't exist");
     // Update is called once per frame
     void Update()
     {
+         if(Input.GetKeyDown(KeyCode.B))enableSound = !enableSound;
+        soundEnabledText.text = "Sound: " + (enableSound ? "Enabled" : "Disabled");
+       
         if(isRunning){
         if(!romInputField.isFocused){
             HandleInput();
             if(Input.GetKeyDown(KeyCode.T))Reset();
+             
+             
         }
         float cycles = (float)cycleSpeed/60f;
         missedCycles += cycles - Mathf.Floor(cycles);
@@ -144,62 +154,50 @@ throw new UnityException("The given ROM path doesn't exist");
             if(!waitForInput) ExecuteInstruction();
         }
         if(delayTimer > 0) delayTimer--;
-        if(soundTimer > 0){
-            //play sound if soundtimer == 1
-            soundTimer--;
-        }
+        if(soundTimer > 0)soundTimer--;
+        
         }
     }
 
     public KeyCode[] keys = 
+    {
+    KeyCode.X,//0
+	KeyCode.Alpha1,//1
+	KeyCode.Alpha2,//2
+	KeyCode.Alpha3,//3
+	KeyCode.Q,//4
+	KeyCode.W,//5
+	KeyCode.E,//6
+	KeyCode.A,//7
+	KeyCode.S,//8
+	KeyCode.D,//9
+	KeyCode.Z,//A
+	KeyCode.C,//B
+    KeyCode.Alpha4,//C
+	KeyCode.R,//D
+	KeyCode.F,//E
+	KeyCode.V//F
+    };
     
-	{KeyCode.X,
-	KeyCode.Alpha1, 
-	KeyCode.Alpha2,
-	KeyCode.Alpha3,
-	KeyCode.Q,
-	KeyCode.W,
-	KeyCode.E,
-	KeyCode.Alpha4,
-	KeyCode.A,
-	KeyCode.S,
-	KeyCode.D,
-	KeyCode.Z,
-	KeyCode.C,
-	KeyCode.Alpha1,
-	KeyCode.R,
-	KeyCode.F,
-	KeyCode.V
-    };
-	
 	/*
-	{KeyCode.Alpha1, KeyCode.Alpha2,KeyCode.Alpha3,KeyCode.Alpha4,
-    KeyCode.Q,KeyCode.W,KeyCode.E,KeyCode.R,
-    KeyCode.A,KeyCode.S,KeyCode.D,KeyCode.F,
-    KeyCode.Z,KeyCode.X,KeyCode.C,KeyCode.V
-    };
+Keyboard Value Layout:
+    1 2 3 C
+    4 5 6 D
+    7 8 9 E
+    A 0 B F
 	*/
-	/*
-    public byte[] keyValues =
-    {0x01, 0x02, 0x03,0x0C,
-         0x04, 0x05, 0x06, 0x0D,
-         0x07,0x08,0x09,0x0E,
-         0x0A,0x00,0x0B,0x0F
-         };
-		 */
 
     
 
     void HandleInput(){
         for(int i = 0; i < 16; i++){
            isPressingKey[i] = Input.GetKey(keys[i]);
-           if(waitForInput && Input.GetKey(keys[i])){
+            if(waitForInput && isPressingKey[i]){
                waitForInput = false;
                V[waitForInputRegisterIndex] = (byte)i;
                pc += 2;
            }
         }
-        
     }
      float frequency = 440;
     void OnAudioFilterRead(float[] data, int channels)
@@ -218,14 +216,16 @@ throw new UnityException("The given ROM path doesn't exist");
     }
     
     void ExecuteInstruction(){
-         byte Vx, Vy;
          int opcode = (ram[pc]<<8)+ram[pc+1];
          int nnn = opcode&0xFFF;
          int xIndex = (opcode & 0x0F00) >> 8;
          int yIndex = (opcode & 0x00F0) >> 4;
+        int n = opcode & 0x0F;
          byte kk = (byte)(opcode & 0xFF);
+        byte Vx = V[xIndex];
+        byte Vy = V[yIndex];
 
-         if(showDebugMessages){
+        if (showDebugMessages){
 			 Debug.Log("0x" + opcode.ToString("X4") + ", PC = 0x" + pc.ToString("X") + ", I = 0x" + I.ToString("X") + ", nnn = 0x" + nnn.ToString("X") + ", kk = 0x" + kk.ToString("X") + ", Vx = " + xIndex.ToString("X") + 
          ", Vy = " + yIndex.ToString("X"));
          string vRegistersString = "";
@@ -236,20 +236,19 @@ throw new UnityException("The given ROM path doesn't exist");
 		 }
         switch(opcode>>12){//check the first nibble of the 2 byte instruction
             case 0x00:
-            switch(opcode & 0x0F){
-                case 0x0: //clear the display
-                if(showDebugMessages)Debug.Log("cls");
-                ClearScreen();
-                pc += 2;
-                break;
-                case 0xE: //return from the current subroutine
-                 if(showDebugMessages)Debug.Log("ret");
-                 sp--;
-                 pc = stack[sp];
-				
-				pc += 2;
-                break;
-                default:
+            switch(opcode & 0xFF){
+             case 0xE0: //clear the display
+             if (showDebugMessages) Debug.Log("cls");
+             ClearScreen();
+             pc += 2;
+             break;
+             case 0xEE: //return from the current subroutine
+             if (showDebugMessages) Debug.Log("ret");
+             sp--;
+             pc = stack[sp];
+             pc += 2;
+             break;
+             default:
            throw new UnityException("Invalid/unimplemented instruction");
 
             }
@@ -257,32 +256,26 @@ throw new UnityException("The given ROM path doesn't exist");
             break;
             case 0x01: //jump to address nnn
              if(showDebugMessages)Debug.Log("jp nnn");
-            pc = (ushort)(nnn);
-			
+            pc = (ushort)(nnn);	
             break;
             case 0x02: //call subroutine at nnn
              if(showDebugMessages)Debug.Log("call nnn");
              stack[sp] = pc;
-			 sp++;
-            
+			 sp++;         
              pc = (ushort)(nnn);
             break;
             case 0x03: //skip next instruction if Vx = 2nd byte
              if(showDebugMessages)Debug.Log("se Vx, kk");
-            Vx = V[xIndex];
             if(Vx == kk) pc += 2;
             pc += 2;
             break;
             case 0x04: //skip next instruct if Vx != 2nd byte
              if(showDebugMessages)Debug.Log("sne Vx, kk");
-            Vx = V[xIndex];
             if(Vx != kk) pc += 2;
             pc += 2;
             break;
             case 0x05: //skip next instruction if Vx = Vy
              if(showDebugMessages)Debug.Log("se Vx, Vy");
-            Vx = V[xIndex];
-            Vy = V[yIndex];
             if(Vx == Vy) pc += 2;
             pc += 2;
             break;
@@ -297,9 +290,6 @@ throw new UnityException("The given ROM path doesn't exist");
             pc += 2;
             break;
             case 0x08:
-
-            Vx = V[xIndex];
-            Vy = V[yIndex];
             switch(ram[pc + 1] & 0x0F){
                 case 0x00:
                 if(showDebugMessages)Debug.Log("ld Vx, Vy");
@@ -357,13 +347,11 @@ throw new UnityException("The given ROM path doesn't exist");
             break;
             case 0x09:
             if(showDebugMessages)Debug.Log("sne Vx, Vy");
-            Vx = V[xIndex];
-            Vy = V[yIndex];
             if(Vx != Vy) pc += 2;
             pc += 2;
             break;
             case 0x0A:
-            if(showDebugMessages)Debug.Log("ld i, nnn");
+            if(showDebugMessages)Debug.Log("ld I, nnn");
             I = (ushort)(nnn);
             pc += 2;
             break;
@@ -380,7 +368,7 @@ throw new UnityException("The given ROM path doesn't exist");
             if(showDebugMessages)Debug.Log("drw, Vx, Vy, n");
             int spriteX = V[xIndex];
             int spriteY = V[yIndex];
-			int spriteHeight = (int)(opcode&0x0F);
+			int spriteHeight = n;
             V[0x0F] = 0;
             for(int x = 0; x < 8; x++){
             for(int y = 0; y < spriteHeight; y++){
@@ -402,13 +390,12 @@ throw new UnityException("The given ROM path doesn't exist");
             switch(opcode & 0xFF){
                 case 0x9E:
                 if(showDebugMessages)Debug.Log("skp Vx");
-                Vx = V[xIndex];
+                
                 if(isPressingKey[Vx]) pc += 2;
                 pc += 2;
                 break;
                 case 0xA1:
-                if(showDebugMessages)Debug.Log("sknp Vx");
-                Vx = V[xIndex];
+                if(showDebugMessages)Debug.Log("sknp Vx");             
                 if(!isPressingKey[Vx]) pc += 2;
                 pc += 2;
                 break;
@@ -417,7 +404,6 @@ throw new UnityException("The given ROM path doesn't exist");
             }
             break;
             case 0x0F:
-            Vx = V[xIndex];
             switch(opcode & 0xFF){
                 case 0x07:
                 if(showDebugMessages)Debug.Log("ld Vx, DT");
@@ -458,8 +444,8 @@ throw new UnityException("The given ROM path doesn't exist");
                 break;
                 case 0x55:
                 if(showDebugMessages)Debug.Log("ld [I], Vx");
+
                 for(int i = 0; i <= xIndex; i++){
-                    if(i >= 16)break;
                     ram[I + i] = V[i];
 
                 }
@@ -468,7 +454,6 @@ throw new UnityException("The given ROM path doesn't exist");
                 case 0x65:
                 if(showDebugMessages)Debug.Log("ld Vx, [I]");
                 for(int i = 0; i <= xIndex; i++){
-                    if(i >= 16)break;
                     V[i] = ram[I + i];
                 }
                 pc += 2;
